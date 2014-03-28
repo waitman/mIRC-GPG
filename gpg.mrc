@@ -1,8 +1,9 @@
 ; mirc-gpg by Phil Lavin (0x3FFC291A) & Allan Jude (0x7F697DBA)
 ; SVN: $Id$
+; modified by Waiman Gobble <uzimac@da3m0n8t3r.com>
 
 alias gpg.setver {
-  set %gpg.scriptver 0.8
+  set %gpg.scriptver 0.9
 }
 
 alias gpg.updatever {
@@ -18,10 +19,10 @@ menu status,channel,query,nicklist,menubar {
   .Automatic Decryption
   ..$iif($group(#gpg).status == on,$style(1)) Enable:.enable #gpg
   ..$iif($group(#gpg).status == off,$style(1)) Disable:.disable #gpg
-  .Generate a new Key:runapp cmd /c %gpg.path $+ gpg --gen-key
-  ;.Upload my Keys:runapp cmd /c %gpg.path $+ gpg --keyserver gpg.geekshed.net --send-keys ; doesn't work yet
-  .Refresh my Keys:echo -at Refreshing keys from gpg.geekshed.net please wait... | runapphidden cmd /c %gpg.path $+ gpg --keyserver gpg.geekshed.net --refresh-keys | echo -at All keys have been refreshed
-  .Search for Keys:runapp cmd /c %gpg.path $+ gpg --keyserver gpg.geekshed.net --search-keys $$?="Search Parameters (Email is best)"
+  .Generate a new Key:runapp cmd /c %gpg.path $+ gpg2.exe --gen-key
+  ;.Upload my Keys:runapp cmd /c %gpg.path $+ gpg2.exe --keyserver keys.gnupg.net --send-keys ; doesn't work yet.. umm should work with a running keyserver?
+  .Refresh my Keys:echo -at Refreshing keys from keys.gnupg.net please wait... | runapphidden cmd /c %gpg.path $+ gpg2.exe --keyserver keys.gnupg.net --refresh-keys | echo -at All keys have been refreshed
+  .Search for Keys:runapp cmd /c %gpg.path $+ gpg2.exe --keyserver keys.gnupg.net --search-keys $$?="Search Parameters (Email is best)"
   ;.Set Key Trust: ;not implemented
 }
 
@@ -35,16 +36,16 @@ on *:load:{
     runapphidden cmd /c mkdir " $+ $scriptdir $+ gpg\textin $+ "
   }
 
-  if ($isfile(C:\Program Files\GNU\GnuPG\gpg.exe)) {
+  if ($isfile(C:\Program Files\GNU\GnuPG\gpg2.exe)) {
     set %gpg.path $shortfn(C:\Program Files\GNU\GnuPG\)
     echo -at GPG Found At C:\Program Files\GNU\GnuPG\
   }
-  elseif ($isfile(C:\Program Files (x86)\GNU\GnuPG\gpg.exe)) {
+  elseif ($isfile(C:\Program Files (x86)\GNU\GnuPG\gpg2.exe)) {
     set %gpg.path $shortfn(C:\Program Files (x86)\GNU\GnuPG\)
     echo -at GPG Found At C:\Program Files (x86)\GNU\GnuPG\
   }
   else {
-    set %gpg.path $shortfn($sdir(C:\, Please choose the directory where gpg.exe was installed to))
+    set %gpg.path $shortfn($sdir(C:\, Please choose the directory where gpg2.exe was installed to))
   }
 }
 
@@ -94,92 +95,7 @@ alias gpgEncrypt {
 
       write -c " $+ %gpg.sourcefile $+ " $editbox($active, 0)
 
-      runapp cmd /c %gpg.path $+ gpg -e -a %gpg.recipients -o " $+ %gpg.destfile $+ " " $+ %gpg.sourcefile $+ " > " $+ %gpg.outfile $+ " 2>&1
-
-      if ($lines(%gpg.outfile) > 0) {
-        echo -at Possible error detected. GPG produced output:
-
-        set %gpg.i 1
-
-        while (%gpg.i <= $lines(%gpg.outfile)) {
-          echo -at $read(%gpg.outfile, %gpg.i)
-          inc %gpg.i
-        }
-      }
-
-      set %gpg.editbox $editbox($active, 0)
-      editbox -a $null
-
-      set %gpg.i 1
-
-      while (%gpg.i <= $lines(%gpg.destfile)) {
-        set %gpg.line $read(%gpg.destfile, %gpg.i)
-
-        if ($len(%gpg.line) == 0) {
-          msg $active Comment: mirc-gpg by GeekShed.net version %gpg.scriptver http://mirc-gpg.googlecode.com
-          set %gpg.body 1
-        }
-        if (%gpg.line == -----END PGP MESSAGE-----) {
-          msg $active %gpg.outmsg
-          unset %gpg.outmsg
-          unset %gpg.body
-        }
-
-        if (%gpg.body == 1) {
-          ;510 = Buffer of 512 bytes minus \r\n
-          ;Minus from that length of your host, 14 other chars and the length of the channel
-          if ($calc($len(%gpg.line) + $len(%gpg.outmsg)) >= $calc(510 - ($len($address($me, 5)) + 14 + $len($active)))) {
-            msg $active %gpg.outmsg
-            unset %gpg.outmsg
-            set %gpg.outmsg %gpg.line
-          } 
-          else {
-            set %gpg.outmsg %gpg.outmsg $+ %gpg.line
-          }
-        }
-        else {
-          msg $active %gpg.line
-        }
-        inc %gpg.i
-      }
-
-      if ($len(%gpg.outmsg) > 0) {
-        msg $active %gpg.outmsg
-        unset %gpg.outmsg
-      }
-      unset %gpg.body
-    }
-
-    if (%gpg.editbox != $null) {
-      echo -at < $+ $me [UNENC]> 4 $+ %gpg.editbox
-      unset %gpg.editbox
-    }
-
-    unset %gpg.halt
-
-    runapphidden cmd /c del " $+ $scriptdir $+ gpg\*" /Q
-  }
-}
-
-alias gpgDecrypt {
-  set %gpg.destfile $4- $+ .unenc
-  runappmin cmd /c %gpg.path $+ gpg -d -o " $+ %gpg.destfile $+ " " $+ $4- $+ " 2> " $+ $4- $+ .out $+ "
-
-  .timergpg $+ . $+ $3 $+ . $+ $2 off
-
-  if (!$isfile(%gpg.destfile)) {
-    echo $2 $timestamp < $+ $1 [ERROR]> 4This message may not have been for you
-  }
-  else {
-    set %gpg.i 1
-
-    while (%gpg.i <= $lines($4- $+ .unenc)) {
-      set %gpg.readline $read($4- $+ .unenc, %gpg.i)
-      if ($len(%gpg.readline) > 0) {
-        echo $2 $timestamp < $+ $1 [UNENC]> 4 $+ $strip(%gpg.readline)
-      }
-      else {
-        echo $2 $timestamp < $+ $1 $+ [UNENC]> 4 $+ $chr(1)
+      runapp cmd /c %gpg.path $+ gpg2.exe -e -a %gpg.recir(1)
       }
       inc %gpg.i
     }
@@ -192,10 +108,10 @@ alias addKeysToSPK {
   set %gpg.keyfile $scriptdir $+ gpg\keylist.txt
 
   if ($1 == $null) {
-    runapphidden cmd /c %gpg.path $+ gpg --list-keys > " $+ %gpg.keyfile $+ "
+    runapphidden cmd /c %gpg.path $+ gpg2.exe --list-keys > " $+ %gpg.keyfile $+ "
   }
   else {
-    runapphidden cmd /c %gpg.path $+ gpg --list-keys " $+ $1- $+ " > " $+ %gpg.keyfile $+ "
+    runapphidden cmd /c %gpg.path $+ gpg2.exe --list-keys " $+ $1- $+ " > " $+ %gpg.keyfile $+ "
   }
 
   ; Reset $readn - is there a better way?
